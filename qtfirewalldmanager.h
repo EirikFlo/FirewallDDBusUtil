@@ -39,9 +39,11 @@ public:
     };
 
     /**
-     * @brief Default constructor for QtFirewalldManager.
+     * @brief Constructs a QtFirewalldManager with a specific D-Bus connection.
+     * @param connection The QDBusConnection to use for D-Bus communication.
+     *                   Defaults to QDBusConnection::systemBus().
      */
-    QtFirewalldManager() = default;
+    explicit QtFirewalldManager(QDBusConnection connection = QDBusConnection::systemBus());
     ~QtFirewalldManager() override = default;
 
     /**
@@ -127,4 +129,6 @@ private:
     QDBusInterface coreIface() const;
     QDBusInterface zoneIface(const QString &zone) const;
     QString objectPathForZone(const QString &zone) const;
+
+    QDBusConnection m_dbusConnection;
 };

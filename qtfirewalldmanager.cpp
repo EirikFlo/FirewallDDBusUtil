@@ -1,21 +1,28 @@
 #include "qtfirewalldmanager.h"
 #include <QDebug>
 
+// Constructor implementation
+QtFirewalldManager::QtFirewalldManager(QDBusConnection connection)
+    : m_dbusConnection(connection) {}
+
 static constexpr auto SERVICE_NAME = "org.fedoraproject.FirewallD1";
 static constexpr auto CORE_PATH    = "/org/fedoraproject/FirewallD1";
 static constexpr auto CORE_IFACE   = "org.fedoraproject.FirewallD1";
 static constexpr auto ZONE_IFACE   = "org.fedoraproject.FirewallD1.zone";
 
 QDBusInterface QtFirewalldManager::coreIface() const {
-    return {SERVICE_NAME, CORE_PATH, CORE_IFACE, QDBusConnection::systemBus()};
+    // Use the member D-Bus connection
+    return {SERVICE_NAME, CORE_PATH, CORE_IFACE, m_dbusConnection};
 }
 
 QString QtFirewalldManager::objectPathForZone(const QString &zone) const {
+    // This helper method remains the same as it doesn't directly use the connection.
     return QStringLiteral("%1/zones/%2").arg(CORE_PATH, zone);
 }
 
 QDBusInterface QtFirewalldManager::zoneIface(const QString &zone) const {
-    return {SERVICE_NAME, objectPathForZone(zone), ZONE_IFACE, QDBusConnection::systemBus()};
+    // Use the member D-Bus connection
+    return {SERVICE_NAME, objectPathForZone(zone), ZONE_IFACE, m_dbusConnection};
 }
 
 QStringList QtFirewalldManager::zoneNames() {

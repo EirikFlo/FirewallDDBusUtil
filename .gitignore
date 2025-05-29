@@ -1,0 +1,13 @@
+build/
+Derived from object files, *.o
+Derived from dependencies, *.d
+Executable files, FirewalldManager
+Executable files, FirewalldManagerTests
+Executable files, FirewalldManagerBoostTests
+CMake cache files, CMakeCache.txt
+CMake generated files, cmake_install.cmake
+CMake generated files, Makefile
+CMake generated files, CTestTestfile.cmake
+CMake generated files, compile_commands.json
+Qt MOC generated files, *_autogen/
+Timestamp files, */timestamp

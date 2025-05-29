@@ -41,3 +41,28 @@ target_link_libraries(FirewalldManagerTests
 )
 
 add_test(NAME FirewalldManagerTests COMMAND FirewalldManagerTests)
+
+# Boost Test Setup
+find_package(Boost REQUIRED COMPONENTS unit_test_framework)
+
+add_executable(FirewalldManagerBoostTests
+  test_qtfirewalldmanager_boost.cpp
+  # qtfirewalldmanager.cpp is already linked via target_sources if FirewalldManager is not a library
+  # If FirewalldManager is a library, link against it instead of target_sources below.
+)
+
+# Link QtFirewalldManager sources directly if not a library
+# This assumes FirewalldManager is NOT a library and its sources need to be compiled with the tests.
+# If FirewalldManager is a library target (add_library), then link against that target instead.
+target_sources(FirewalldManagerBoostTests PRIVATE 
+  qtfirewalldmanager.cpp
+  mock_firewalld_service.cpp
+)
+
+target_link_libraries(FirewalldManagerBoostTests
+  Qt${QT_VERSION_MAJOR}::Core
+  Qt${QT_VERSION_MAJOR}::DBus
+  Boost::unit_test_framework
+)
+
+add_test(NAME FirewalldManagerBoostTests COMMAND FirewalldManagerBoostTests)
