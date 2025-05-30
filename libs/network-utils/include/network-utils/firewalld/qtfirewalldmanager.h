@@ -1,5 +1,5 @@
 #pragma once
-#include "ifirewalldmanager.h"
+#include "network-utils/firewalld/ifirewalldmanager.h" // Updated include path
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QVariant>

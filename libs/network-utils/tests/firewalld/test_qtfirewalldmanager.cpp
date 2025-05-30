@@ -1,11 +1,12 @@
 #include <QtTest>
 #include <QObject>
-#include "qtfirewalldmanager.h" // Adjust path if necessary
-#include "ifirewalldmanager.h"  // Adjust path if necessary
+#include "network-utils/firewalld/qtfirewalldmanager.h" // Updated path
+#include "network-utils/firewalld/ifirewalldmanager.h"  // Updated path
 #include <QDebug>
 #include <QStringList>
 #include <stdexcept> // For FirewalldDBusError
 #include <algorithm> // For std::any_of
+#include "network-utils/types/dbus_types.h" // For D-Bus type registration
 
 class TestQtFirewalldManager : public QObject {
     Q_OBJECT
@@ -52,7 +53,9 @@ private:
 };
 
 // Constructor, Destructor, init/cleanup methods implementation
-TestQtFirewalldManager::TestQtFirewalldManager() {}
+TestQtFirewalldManager::TestQtFirewalldManager() {
+    NetworkUtils::registerDbusTypes(); // Register custom types
+}
 TestQtFirewalldManager::~TestQtFirewalldManager() {}
 
 void TestQtFirewalldManager::initTestCase() {

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(test1 LANGUAGES CXX)
+project(NetworkDemoApp LANGUAGES CXX) # Renamed project
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -9,60 +9,103 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Test)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Test)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Network Test) # Find Qt (6 or 5) and major components
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Network Test) # Find specific versioned components
 
-add_executable(FirewalldManager
-  ifirewalldmanager.h
-  qtfirewalldmanager.h
-  qtfirewalldmanager.cpp
-  main.cpp
+enable_testing() # Enable CTest
+
+# Define network-utils library
+add_library(network-utils STATIC
+  libs/network-utils/src/firewalld/qtfirewalldmanager.cpp
+  libs/network-utils/include/network-utils/firewalld/qtfirewalldmanager.h # For AUTOMOC
+  libs/network-utils/src/common/dbus_types.cpp
+  libs/network-utils/src/networkmanager/INetworkManager.cpp
+  libs/network-utils/include/network-utils/networkmanager/INetworkManager.h # For AUTOMOC
+  libs/network-utils/src/networkmanager/QtNetworkManager.cpp
+  libs/network-utils/include/network-utils/networkmanager/QtNetworkManager.h # For AUTOMOC
+  # NetworkManager sources will be added later
 )
-target_link_libraries(FirewalldManager Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::DBus)
+target_include_directories(network-utils
+  PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/libs/network-utils/include"
+    "${CMAKE_CURRENT_BINARY_DIR}" # For MOC/UIC generated files
+  PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/libs/network-utils/src"
+)
+target_link_libraries(network-utils
+  PUBLIC
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::DBus
+    Qt${QT_VERSION_MAJOR}::Network # Added for QHostAddress
+)
+set_target_properties(network-utils PROPERTIES CXX_STANDARD ${CMAKE_CXX_STANDARD}) # Ensure C++20
+# Explicitly enable AUTOMOC, AUTOUIC, AUTORCC for the library
+set_target_properties(network-utils PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON)
 
-install(TARGETS FirewalldManager
+# Main Application (NetworkDemoApp)
+add_executable(NetworkDemoApp main.cpp) # Changed from FirewalldManager
+target_link_libraries(NetworkDemoApp PRIVATE network-utils)
+
+install(TARGETS NetworkDemoApp # Changed from FirewalldManager
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-add_executable(FirewalldManagerTests
-  test_qtfirewalldmanager.cpp
-  # Add qtfirewalldmanager.cpp and qtfirewalldmanager.h if not part of a library
-  # If QtFirewalldManager is built as a library, link against it.
-  # For now, assume we might need to compile them directly into the test
-  # or that the main FirewalldManager target is a library.
-  # Adjust if QtFirewalldManager is part of a static/shared library.
+# Qt Test Target
+add_executable(FirewalldQtTests
+  libs/network-utils/tests/firewalld/test_qtfirewalldmanager.cpp
 )
-# Link QtFirewalldManager sources directly if not a library
-target_sources(FirewalldManagerTests PRIVATE qtfirewalldmanager.cpp)
+target_link_libraries(FirewalldQtTests
+  PRIVATE
+    network-utils
+    Qt${QT_VERSION_MAJOR}::Test
+)
+add_test(NAME FirewalldQtTests COMMAND FirewalldQtTests) # Updated test name
 
-target_link_libraries(FirewalldManagerTests
+# Boost Test Target
+find_package(Boost REQUIRED COMPONENTS unit_test_framework)
+
+add_executable(FirewalldBoostTests
+  libs/network-utils/tests/firewalld/test_qtfirewalldmanager_boost.cpp
+  libs/network-utils/tests/firewalld/mock_firewalld_service.cpp
+)
+target_link_libraries(FirewalldBoostTests
+  PRIVATE
+    network-utils
+    Boost::unit_test_framework
+)
+add_test(NAME FirewalldBoostTests COMMAND FirewalldBoostTests) # Updated test name
+
+# NetworkManager Live Test Target
+add_executable(NetworkManagerLiveTests
+  libs/network-utils/tests/networkmanager/test_qtnetworkmanager_live.cpp
+)
+
+target_link_libraries(NetworkManagerLiveTests PRIVATE
+  network-utils
   Qt${QT_VERSION_MAJOR}::Core
   Qt${QT_VERSION_MAJOR}::DBus
   Qt${QT_VERSION_MAJOR}::Test
 )
+set_target_properties(NetworkManagerLiveTests PROPERTIES AUTOMOC ON)
 
-add_test(NAME FirewalldManagerTests COMMAND FirewalldManagerTests)
+add_test(NAME NetworkManagerLiveTests COMMAND NetworkManagerLiveTests)
 
-# Boost Test Setup
-find_package(Boost REQUIRED COMPONENTS unit_test_framework)
-
-add_executable(FirewalldManagerBoostTests
-  test_qtfirewalldmanager_boost.cpp
-  # qtfirewalldmanager.cpp is already linked via target_sources if FirewalldManager is not a library
-  # If FirewalldManager is a library, link against it instead of target_sources below.
+# NetworkManager Boost Test Target
+add_executable(NetworkManagerBoostTests
+  libs/network-utils/tests/networkmanager/MockNetworkManagerService.h
+  libs/network-utils/tests/networkmanager/MockNetworkManagerService.cpp
+  libs/network-utils/tests/networkmanager/MockNMDevice.h
+  libs/network-utils/tests/networkmanager/MockNMDevice.cpp
+  libs/network-utils/tests/networkmanager/MockNMIp4Config.h
+  libs/network-utils/tests/networkmanager/MockNMIp4Config.cpp
+  libs/network-utils/tests/networkmanager/test_qtnetworkmanager_boost.cpp
 )
-
-# Link QtFirewalldManager sources directly if not a library
-# This assumes FirewalldManager is NOT a library and its sources need to be compiled with the tests.
-# If FirewalldManager is a library target (add_library), then link against that target instead.
-target_sources(FirewalldManagerBoostTests PRIVATE 
-  qtfirewalldmanager.cpp
-  mock_firewalld_service.cpp
-)
-
-target_link_libraries(FirewalldManagerBoostTests
+target_link_libraries(NetworkManagerBoostTests PRIVATE
+  network-utils
   Qt${QT_VERSION_MAJOR}::Core
   Qt${QT_VERSION_MAJOR}::DBus
+  Qt${QT_VERSION_MAJOR}::Network # For QHostAddress if used in mock/tests
+  Qt${QT_VERSION_MAJOR}::Test # For QTest utilities like QSignalSpy, if needed later
   Boost::unit_test_framework
 )
-
-add_test(NAME FirewalldManagerBoostTests COMMAND FirewalldManagerBoostTests)
+set_target_properties(NetworkManagerBoostTests PROPERTIES AUTOMOC ON)
+add_test(NAME NetworkManagerBoostTests COMMAND NetworkManagerBoostTests)

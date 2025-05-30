@@ -1,4 +1,8 @@
+#include "network-utils/types/dbus_types.h" // Ensure operator declarations are seen first
 #include "mock_firewalld_service.h"
+#include "network-utils/types/port.h"    // For Port type
+#include "network-utils/types/service.h" // For Service type
+#include "network-utils/types/rich_rule.h"// For RichRule type
 #include <QDBusConnection>
 #include <QDebug>
 #include <QVariant> // Required for QVariant::fromValue
@@ -10,10 +14,10 @@ MockFirewallDZone::MockFirewallDZone(const QString& zoneName, QObject *parent)
     // Predefined data for the mock zone
     if (m_zoneName == "mockPublic") {
         m_services_data << "http" << "ssh";
-        m_ports_data.append({8080, "tcp"});
-        m_ports_data.append({53, "udp"});
+        m_ports_data.append({8080, "tcp"}); // QPair<quint16, QString>
+        m_ports_data.append({53, "udp"});   // QPair<quint16, QString>
         m_richRules_data.append("rule family='ipv4' source address='1.2.3.4' accept");
-        // m_icmpBlocks_data; // Initially empty, can be modified by mock add/remove icmp block methods later
+        // m_icmpBlocks_data can be empty or populated as needed
     } else if (m_zoneName == "mockWork") {
         m_services_data << "ssh" << "samba-client";
         // No ports, rules, or icmp blocks for this zone by default
@@ -21,28 +25,29 @@ MockFirewallDZone::MockFirewallDZone(const QString& zoneName, QObject *parent)
 }
 
 // Slots that mimic readable properties
-QStringList MockFirewallDZone::services() {
-    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::services() called. Returning:" << m_services_data;
+QStringList MockFirewallDZone::services() const {
+    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::services() called. Returning:" << m_services_data.count() << "services.";
     return m_services_data;
 }
 
-QList<QList<QVariant>> MockFirewallDZone::ports() {
-    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::ports() called. Returning:" << m_ports_data.size() << "ports.";
-    QList<QList<QVariant>> qvariantPorts;
+QList<QVariant> MockFirewallDZone::ports() const {
+    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::ports() called. Returning:" << m_ports_data.count() << "ports.";
+    QList<QVariant> listVariant;
     for(const auto& portPair : m_ports_data) {
-        QList<QVariant> p;
-        p << QVariant(portPair.first) << QVariant(portPair.second);
-        qvariantPorts.append(p);
+        QList<QVariant> individualPortData;
+        individualPortData << QVariant(portPair.first);   // port number
+        individualPortData << QVariant(portPair.second);  // protocol string
+        listVariant.append(QVariant::fromValue(individualPortData));
     }
-    return qvariantPorts;
+    return listVariant;
 }
 
-QStringList MockFirewallDZone::richRules() {
-    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::richRules() called. Returning:" << m_richRules_data;
+QStringList MockFirewallDZone::richRules() const {
+    qDebug() << "MockFirewallDZone (" << m_zoneName << ")::richRules() called. Returning:" << m_richRules_data.count() << "rich rules.";
     return m_richRules_data;
 }
 
-QStringList MockFirewallDZone::icmpBlocks() {
+QStringList MockFirewallDZone::icmpBlocks() const {
     qDebug() << "MockFirewallDZone (" << m_zoneName << ")::icmpBlocks() called. Returning:" << m_icmpBlocks_data;
     return m_icmpBlocks_data;
 }
