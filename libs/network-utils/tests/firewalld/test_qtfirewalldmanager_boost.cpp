@@ -7,9 +7,10 @@
 #include <algorithm> // For std::any_of
 #include <cstring> // For strcpy
 
-#include "qtfirewalldmanager.h" // Adjust path if necessary
-#include "ifirewalldmanager.h"  // Adjust path if necessary
-#include "mock_firewalld_service.h" // Adjust path if needed
+#include "network-utils/firewalld/qtfirewalldmanager.h" // Updated path
+#include "network-utils/firewalld/ifirewalldmanager.h"  // Updated path
+#include "mock_firewalld_service.h" // Updated path (now local)
+#include "network-utils/types/dbus_types.h" // For D-Bus type registration
 // FirewalldDBusError is defined in qtfirewalldmanager.h
 
 // Provide an operator<< for QString to std::ostream for Boost.Test
@@ -65,6 +66,15 @@ struct QtAppFixture {
         }
     }
 };
+
+// Global fixture to register D-Bus types once for all Boost tests
+struct GlobalDBusSetup {
+    GlobalDBusSetup() {
+        NetworkUtils::registerDbusTypes();
+        BOOST_TEST_MESSAGE("GlobalDBusSetup: D-Bus types registered for Boost tests.");
+    }
+};
+BOOST_GLOBAL_FIXTURE(GlobalDBusSetup);
 
 // Test suite definition
 BOOST_AUTO_TEST_SUITE(QtFirewalldManagerSuite)

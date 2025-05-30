@@ -1,5 +1,13 @@
-#include "qtfirewalldmanager.h"
+#include "network-utils/types/dbus_types.h" // Ensure operator declarations are seen first
+#include "network-utils/firewalld/qtfirewalldmanager.h" // Updated include path
 #include <QDebug>
+
+// Include new type headers
+#include "network-utils/types/service.h"
+#include "network-utils/types/port.h"
+#include "network-utils/types/rich_rule.h"
+#include "network-utils/types/icmp_block.h"
+#include "network-utils/types/zone_details.h"
 
 // Constructor implementation
 QtFirewalldManager::QtFirewalldManager(QDBusConnection connection)
@@ -26,8 +34,12 @@ QDBusInterface QtFirewalldManager::zoneIface(const QString &zone) const {
 }
 
 QStringList QtFirewalldManager::zoneNames() {
-    qDebug() << "Calling DBus method:" << coreIface().service() << coreIface().path() << coreIface().interface() << "getZones";
-    auto reply = coreIface().call("getZones");
+    auto iface = coreIface();
+    if (!iface.isValid()) { // Check after attempting to use it or if creation itself indicates an issue
+        throw FirewalldDBusError(QString("Failed to create D-Bus core interface. Service running? Error: %1").arg(iface.lastError().message()));
+    }
+    qDebug() << "Calling DBus method:" << iface.service() << iface.path() << iface.interface() << "getZones";
+    auto reply = iface.call("getZones");
     if (reply.type() == QDBusMessage::ErrorMessage) {
         QString errorMsg = QString("DBus call getZones failed: %1").arg(reply.errorMessage());
         qWarning() << errorMsg;
@@ -39,67 +51,79 @@ QStringList QtFirewalldManager::zoneNames() {
 
 ZoneDetails QtFirewalldManager::zoneDetails(const QString &zone) {
     auto iface = zoneIface(zone);
+    if (!iface.isValid()) { // This check is crucial
+        throw FirewalldDBusError(QString("Failed to create D-Bus interface for zone '%1'. Service running? Zone exists? Error: %2").arg(zone).arg(iface.lastError().message()));
+    }
     ZoneDetails details;
 
     // Read 'services' property
-    QVariant servicesProperty = iface.property("services");
-    if (servicesProperty.isValid()) {
-        for (auto &svc : servicesProperty.toStringList())
-            details.services.append(Service{svc});
+    QVariant servicesPropertyVariant = iface.property("services");
+    if (servicesPropertyVariant.isValid() && servicesPropertyVariant.canConvert<QDBusArgument>()) {
+        QDBusArgument servicesArg = servicesPropertyVariant.value<QDBusArgument>();
+        servicesArg >> details.services; // Use custom operator>> for QList<Service>
+    } else if (servicesPropertyVariant.isValid()) { // Fallback for real firewalld if types differ (e.g. QStringList)
+        qWarning() << "Could not convert 'services' property as QDBusArgument for zone" << zone << ". Type is: " << servicesPropertyVariant.typeName() << ". Attempting manual parse from QStringList.";
+        for (const QString &svcName : servicesPropertyVariant.toStringList())
+            details.services.append(Service{svcName});
     } else {
-        // Log a warning if the property is invalid, but continue processing other properties.
-        // The services list in ZoneDetails will remain empty.
-        qWarning() << "Warning: Could not read 'services' property for zone" << zone;
+        qWarning() << "Warning: Could not read 'services' property for zone" << zone << ". Error:" << iface.lastError().message();
     }
 
     // Read 'ports' property
-    // Ports are represented as a list of lists/variants, e.g., [[port, protocol], [port, protocol]]
-    QVariant portsProperty = iface.property("ports");
-    if (portsProperty.isValid()) {
-        for (auto entry : portsProperty.toList()) { // Each entry is a QVariant wrapping a QList<QVariant>
-            auto lst = entry.toList(); // This should be [port_number_variant, protocol_string_variant]
-            if (lst.count() == 2) { // Basic validation for [port, protocol] structure
+    QVariant portsPropertyVariant = iface.property("ports");
+    if (portsPropertyVariant.isValid() && portsPropertyVariant.canConvert<QDBusArgument>()) {
+        QDBusArgument portsArg = portsPropertyVariant.value<QDBusArgument>();
+        portsArg >> details.ports; // Use custom operator>> for QList<Port>
+    } else if (portsPropertyVariant.isValid()) { // Fallback for real firewalld
+        qWarning() << "Could not convert 'ports' property as QDBusArgument for zone" << zone << ". Type is: " << portsPropertyVariant.typeName() << ". Attempting manual parse from QList<QVariantList>.";
+        for (const QVariant &entryVariant : portsPropertyVariant.toList()) {
+            QList<QVariant> entryList = entryVariant.toList();
+            if (entryList.count() == 2) {
                 bool ok;
-                quint16 portVal = lst.at(0).toUInt(&ok);
+                quint16 portVal = entryList.at(0).toUInt(&ok);
                 if (ok) {
-                    details.ports.append(Port{portVal, lst.at(1).toString()});
+                    details.ports.append(Port{portVal, entryList.at(1).toString()});
                 } else {
-                    qWarning() << "Warning: Invalid port number format for zone" << zone << ":" << lst.at(0);
+                    qWarning() << "Warning: Invalid port number format in variant list for zone" << zone << ":" << entryList.at(0);
                 }
             } else {
-                qWarning() << "Warning: Invalid port entry structure for zone" << zone << ":" << entry;
+                qWarning() << "Warning: Invalid port entry structure in variant list for zone" << zone << ":" << entryVariant;
             }
         }
     } else {
-        // Log a warning if the property is invalid. Ports list in ZoneDetails remains empty.
-        qWarning() << "Warning: Could not read 'ports' property for zone" << zone;
+        qWarning() << "Warning: Could not read 'ports' property for zone" << zone << ". Error:" << iface.lastError().message();
     }
 
     // Read 'richRules' property
-    // Firewalld versions might use 'richRules' or 'rules_str' (older).
-    // Prefer 'richRules' if available and valid.
-    QVariant richRulesProperty = iface.property("richRules");
-    if (richRulesProperty.isValid() && !richRulesProperty.toStringList().isEmpty()) {
-        qDebug() << "Using 'richRules' property for zone" << zone;
-        for (auto &rr : richRulesProperty.toStringList())
-            details.richRules.append(RichRule{rr});
+    QVariant richRulesPropertyVariant = iface.property("richRules");
+    if (richRulesPropertyVariant.isValid() && richRulesPropertyVariant.canConvert<QDBusArgument>()) {
+        QDBusArgument richRulesArg = richRulesPropertyVariant.value<QDBusArgument>();
+        richRulesArg >> details.richRules; // Use custom operator>> for QList<RichRule>
+    } else if (richRulesPropertyVariant.isValid()) { // Fallback for real firewalld (likely QStringList)
+         qWarning() << "Could not convert 'richRules' property as QDBusArgument for zone" << zone << ". Type is: " << richRulesPropertyVariant.typeName() << ". Attempting manual parse from QStringList.";
+        for (const QString &ruleStr : richRulesPropertyVariant.toStringList())
+            details.richRules.append(RichRule{ruleStr});
     } else {
-        // If 'richRules' is invalid or empty, try falling back to 'rules_str'.
-        qWarning() << "Property 'richRules' is invalid or empty for zone" << zone << ". Trying 'rules_str'.";
-        QVariant rulesStrProperty = iface.property("rules_str");
-        if (rulesStrProperty.isValid()) {
-            qDebug() << "Using 'rules_str' property for zone" << zone;
-            for (auto &rr : rulesStrProperty.toStringList())
-                details.richRules.append(RichRule{rr});
+         // If 'richRules' is invalid or empty, try falling back to 'rules_str' (older firewalld versions)
+        qWarning() << "Could not read 'richRules' property for zone" << zone << ". Error:" << iface.lastError().message() << ". Trying 'rules_str'.";
+        QVariant rulesStrPropertyVariant = iface.property("rules_str");
+        if (rulesStrPropertyVariant.isValid() && rulesStrPropertyVariant.canConvert<QDBusArgument>()) {
+             QDBusArgument richRulesArg = rulesStrPropertyVariant.value<QDBusArgument>();
+             richRulesArg >> details.richRules;
+        } else if (rulesStrPropertyVariant.isValid()) {
+            qWarning() << "Could not convert 'rules_str' property as QDBusArgument for zone" << zone << ". Type is: " << rulesStrPropertyVariant.typeName() << ". Attempting manual parse from QStringList.";
+            for (const QString &ruleStr : rulesStrPropertyVariant.toStringList())
+                details.richRules.append(RichRule{ruleStr});
         } else {
-            // If 'rules_str' is also invalid, log it. Rich rules list remains empty.
-            qWarning() << "Property 'rules_str' is also invalid for zone" << zone;
+            qWarning() << "Property 'rules_str' is also invalid or unreadable for zone" << zone << ". Error:" << iface.lastError().message();
         }
     }
-
     // Read 'icmpBlocks' property
     QVariant icmpBlocksProperty = iface.property("icmpBlocks");
-    if (icmpBlocksProperty.isValid()) {
+    if (iface.lastError().type() != QDBusError::NoError && !icmpBlocksProperty.isValid()){ // Check if property read itself failed critically
+         qWarning() << "Failed to read 'icmpBlocks' property for zone '" << zone << "'. Error: " << iface.lastError().message();
+         // Depending on strictness, could throw here or allow partial data
+    } else if (icmpBlocksProperty.isValid()) {
         for (auto &icmp : icmpBlocksProperty.toStringList()) {
             // Currently, only 'echo-request' (ping) is explicitly handled by IcmpBlock enum.
             if (icmp == QStringLiteral("echo-request"))
@@ -108,7 +132,7 @@ ZoneDetails QtFirewalldManager::zoneDetails(const QString &zone) {
         }
     } else {
         // Log a warning if the property is invalid. ICMP blocks list remains empty.
-        qWarning() << "Warning: Could not read 'icmpBlocks' property for zone" << zone;
+        qWarning() << "Warning: Could not read 'icmpBlocks' property for zone" << zone << ". Error:" << iface.lastError().message();
     }
 
     return details;
