@@ -34,14 +34,15 @@ QDBusInterface QtFirewalldManager::zoneIface(const QString &zone) const {
 }
 
 QStringList QtFirewalldManager::zoneNames() {
-    auto iface = coreIface();
-    if (!iface.isValid()) { // Check after attempting to use it or if creation itself indicates an issue
-        throw FirewalldDBusError(QString("Failed to create D-Bus core interface. Service running? Error: %1").arg(iface.lastError().message()));
+    QDBusInterface zoneSpecificIface(SERVICE_NAME, CORE_PATH, ZONE_IFACE, m_dbusConnection);
+    if (!zoneSpecificIface.isValid()) { // Check after attempting to use it
+        throw FirewalldDBusError(QString("Failed to create D-Bus interface for getZones. Service running? Error: %1")
+                                 .arg(zoneSpecificIface.lastError().message()));
     }
-    qDebug() << "Calling DBus method:" << iface.service() << iface.path() << iface.interface() << "getZones";
-    auto reply = iface.call("getZones");
+    qDebug() << "Calling DBus method:" << zoneSpecificIface.service() << zoneSpecificIface.path() << zoneSpecificIface.interface() << "getZones";
+    auto reply = zoneSpecificIface.call("getZones");
     if (reply.type() == QDBusMessage::ErrorMessage) {
-        QString errorMsg = QString("DBus call getZones failed: %1").arg(reply.errorMessage());
+        QString errorMsg = QString("DBus call getZones failed: %1. Interface error: %2").arg(reply.errorMessage()).arg(zoneSpecificIface.lastError().message());
         qWarning() << errorMsg;
         throw FirewalldDBusError(errorMsg);
     }
