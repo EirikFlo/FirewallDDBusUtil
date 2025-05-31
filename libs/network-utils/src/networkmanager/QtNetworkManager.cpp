@@ -351,34 +351,46 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
         qWarning() << "Could not read State for" << interfaceName << ":" << deviceIface->lastError().message();
     }
 
-    QVariant speedVar = deviceIface->property("Speed");
-    qDebug() << "Attempting to read Speed property for" << interfaceName;
-    qDebug() << "  speedVar.isValid():" << speedVar.isValid();
-    if (speedVar.isValid()) {
-        qDebug() << "  speedVar.metaType().id():" << speedVar.metaType().id();
-        qDebug() << "  speedVar.metaType().name():" << speedVar.metaType().name();
-        qDebug() << "  speedVar.userType():" << speedVar.userType();
-        qDebug() << "  Expected QMetaType for quint32: id" << QMetaType::fromType<quint32>().id()
-                 << "name" << QMetaType::fromType<quint32>().name();
-        qDebug() << "  Is speedVar.metaType() == QMetaType::fromType<quint32>() ?" << (speedVar.metaType() == QMetaType::fromType<quint32>());
-    } else {
-        qDebug() << "  speedVar is invalid. D-Bus error:" << deviceIface->lastError().message();
-    }
-    if (speedVar.isValid() && speedVar.canConvert<quint32>()) {
-        details.speed = speedVar.toUInt();
-        if (details.speed == 0) {
-            // NM reports 0 for unknown speed (e.g. virtual devices, or if speed detection failed)
-            // This is not necessarily an error, but good to be aware of.
-            qDebug() << "Speed for" << interfaceName << "is reported as 0 kbit/s.";
-        }
-    } else {
-        if (!speedVar.isValid()) {
-            qWarning() << "Could not read Speed for" << interfaceName << "(property invalid):" << deviceIface->lastError().message();
+    qDebug() << "Attempting to read Speed property for" << interfaceName << "using org.freedesktop.DBus.Properties.Get method.";
+    // deviceIface is for org.freedesktop.NetworkManager.Device
+    QDBusMessage getSpeedReply = deviceIface->call(
+        "Get",                 // Method name
+        NM_DEVICE_INTERFACE,   // Interface name where the property resides
+        "Speed"                // Property name
+    );
+
+    if (getSpeedReply.type() == QDBusMessage::ReplyMessage) {
+        if (getSpeedReply.arguments().count() > 0) {
+            QVariant speedPropertyValueVariant = getSpeedReply.arguments().at(0);
+            // The property value is wrapped in a QVariant, which itself contains a QDBusArgument
+            // that holds the actual data.
+            QDBusArgument speedDbusArg = speedPropertyValueVariant.value<QDBusArgument>();
+
+            qDebug() << "  Successful 'Get' reply for Speed. speedPropertyValueVariant.metaType().name():" << speedPropertyValueVariant.metaType().name();
+            qDebug() << "  speedDbusArg.currentSignature():" << speedDbusArg.currentSignature(); // Should be "u" for uint32
+
+            quint32 speedValue = 0;
+            speedDbusArg >> speedValue; // Use the streaming operator
+
+            if (speedDbusArg.error()) {
+                qWarning() << "Failed to stream Speed from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << speedDbusArg.currentSignature();
+                details.speed = 0; // Default to 0 on error
+            } else {
+                details.speed = speedValue; // Store the kbit/s value
+                if (details.speed == 0) {
+                    qDebug() << "Speed for" << interfaceName << "is reported as 0 kbit/s (after streaming from Get).";
+                } else {
+                    qDebug() << "Successfully parsed Speed for" << interfaceName << ":" << details.speed << "kbit/s";
+                }
+            }
         } else {
-            // Property is valid, but maybe not the expected type or value is out of range for quint32 (unlikely for kbit/s speed)
-            qWarning() << "Speed property for" << interfaceName << "is valid, but not convertible to quint32. Value:" << speedVar;
+            qWarning() << "'Get' reply for Speed has no arguments for" << interfaceName;
+            details.speed = 0; // Default to 0 on error
         }
-        details.speed = 0; // Default to 0 if unable to read or convert
+    } else {
+        qWarning() << "Failed to call org.freedesktop.DBus.Properties.Get for Speed on" << interfaceName
+                   << ". Error:" << getSpeedReply.errorMessage();
+        details.speed = 0; // Default to 0 on error
     }
 
     QVariant ip4ConfigPathVar = deviceIface->property("Ip4Config");
@@ -389,26 +401,27 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
         if (!ip4ConfigPath.path().isEmpty() && ip4ConfigPath.path() != "/") {
             QScopedPointer<QDBusInterface> ip4ConfigIface(createIp4ConfigInterface(ip4ConfigPath.path()));
             if (ip4ConfigIface && ip4ConfigIface->isValid()) {
-                QVariant addressesVar = ip4ConfigIface->property("AddressData");
-                if (addressesVar.isValid()) {
-                    qDebug() << "AddressData property (addressesVar) is valid for interface:" << interfaceName;
-                    qDebug() << "  addressesVar.metaType().id():" << addressesVar.metaType().id();
-                    qDebug() << "  addressesVar.metaType().name():" << addressesVar.metaType().name();
-                    qDebug() << "  addressesVar.userType():" << addressesVar.userType(); // Useful if it's a custom type
-                    qDebug() << "  Expected QMetaType for QList<QVariantMap>: id" << QMetaType::fromType<QList<QVariantMap>>().id()
-                             << "name" << QMetaType::fromType<QList<QVariantMap>>().name();
-                    qDebug() << "  Is addressesVar.metaType() == QMetaType::fromType<QList<QVariantMap>>() ?" << (addressesVar.metaType() == QMetaType::fromType<QList<QVariantMap>>());
-                    qDebug() << "  Can convert to QList<QVariantMap>?" << addressesVar.canConvert<QList<QVariantMap>>();
+                qDebug() << "Attempting to read AddressData for" << interfaceName << "using org.freedesktop.DBus.Properties.Get method.";
+                QDBusMessage getAddressDataReply = ip4ConfigIface->call(
+                    "Get", // Method name from org.freedesktop.DBus.Properties
+                    NM_IP4CONFIG_INTERFACE, // Argument 1: Interface name where the property resides
+                    "AddressData"           // Argument 2: Property name
+                );
 
-                    QDBusArgument arg = addressesVar.value<QDBusArgument>();
-                    arg.beginArray(); // For aa{sv}
-                    if (!arg.atEnd()) { // Typically take the first address configuration
-                        arg.beginStructure(); // For a{sv}
-                        QVariantMap addressMap;
-                        // This part is tricky for aa{sv} directly. Let's assume it's QList<QVariantMap>
-                        // as qvariant_cast is often used for this.
-                        QList<QVariantMap> addressDataList = qvariant_cast<QList<QVariantMap>>(addressesVar);
-                        if (!addressDataList.isEmpty()) {
+                if (getAddressDataReply.type() == QDBusMessage::ReplyMessage) {
+                    if (getAddressDataReply.arguments().count() > 0) {
+                        QVariant propertyValueVariant = getAddressDataReply.arguments().at(0);
+                        QDBusArgument dbusArg = propertyValueVariant.value<QDBusArgument>();
+
+                        qDebug() << "  Successful 'Get' reply for AddressData. propertyValueVariant.metaType().name():" << propertyValueVariant.metaType().name();
+                        qDebug() << "  dbusArg.currentSignature():" << dbusArg.currentSignature(); // Should be "aa{sv}"
+
+                        QList<QVariantMap> addressDataList;
+                        dbusArg >> addressDataList; // Use the streaming operator
+
+                        if (dbusArg.error()) {
+                             qWarning() << "Failed to stream AddressData from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << dbusArg.currentSignature();
+                        } else if (!addressDataList.isEmpty()) {
                             QVariantMap firstAddressMap = addressDataList.first();
                             if (firstAddressMap.contains("address")) {
                                 details.currentIpAddress.address = firstAddressMap.value("address").toString();
@@ -416,31 +429,56 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
                             if (firstAddressMap.contains("prefix")) {
                                 details.currentPrefix.prefixLength = firstAddressMap.value("prefix").toUInt();
                             }
+                            qDebug() << "Successfully parsed AddressData for" << interfaceName;
                         } else {
-                             qWarning() << "AddressData list is empty for" << interfaceName;
+                            qDebug() << "AddressData list is empty for" << interfaceName << "(after streaming from Get).";
                         }
-                        // arg.endStructure(); // If we were manually iterating QDBusArgument
+                    } else {
+                        qWarning() << "'Get' reply for AddressData has no arguments for" << interfaceName;
                     }
-                    // arg.endArray(); // If we were manually iterating QDBusArgument
-
                 } else {
-                     qWarning() << "Could not read AddressData for" << interfaceName << "from" << ip4ConfigPath.path() << ":" << ip4ConfigIface->lastError().message();
+                    qWarning() << "Failed to call org.freedesktop.DBus.Properties.Get for AddressData on" << interfaceName
+                               << ". Error:" << getAddressDataReply.errorMessage();
                 }
 
                 QVariant gatewayVar = ip4ConfigIface->property("Gateway");
                 if (gatewayVar.isValid()) details.currentGateway.address = gatewayVar.toString();
                 else qWarning() << "Could not read Gateway for" << interfaceName << "from" << ip4ConfigPath.path() << ":" << ip4ConfigIface->lastError().message();
 
-                QVariant dnsVar = ip4ConfigIface->property("NameserverData");
-                 if (dnsVar.isValid()) {
-                    QList<QVariantMap> dnsDataList = qvariant_cast<QList<QVariantMap>>(dnsVar);
-                    for (const QVariantMap &dnsMap : dnsDataList) {
-                        if (dnsMap.contains("address")) {
-                            details.currentDnsServers.append(IpAddress{dnsMap.value("address").toString()});
+                qDebug() << "Attempting to read NameserverData for" << interfaceName << "using org.freedesktop.DBus.Properties.Get method.";
+                QDBusMessage getDnsDataReply = ip4ConfigIface->call(
+                    "Get", // Method name
+                    NM_IP4CONFIG_INTERFACE, // Interface name where the property resides
+                    "NameserverData"        // Property name
+                );
+
+                if (getDnsDataReply.type() == QDBusMessage::ReplyMessage) {
+                    if (getDnsDataReply.arguments().count() > 0) {
+                        QVariant dnsPropertyValueVariant = getDnsDataReply.arguments().at(0);
+                        QDBusArgument dnsDbusArg = dnsPropertyValueVariant.value<QDBusArgument>();
+
+                        qDebug() << "  Successful 'Get' reply for NameserverData. dnsPropertyValueVariant.metaType().name():" << dnsPropertyValueVariant.metaType().name();
+                        qDebug() << "  dnsDbusArg.currentSignature():" << dnsDbusArg.currentSignature(); // Should be "aa{sv}"
+
+                        QList<QVariantMap> dnsDataList;
+                        dnsDbusArg >> dnsDataList; // Use the streaming operator
+
+                        if (dnsDbusArg.error()) {
+                            qWarning() << "Failed to stream NameserverData from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << dnsDbusArg.currentSignature();
+                        } else {
+                            for (const QVariantMap &dnsMap : dnsDataList) {
+                                if (dnsMap.contains("address")) {
+                                    details.currentDnsServers.append(IpAddress{dnsMap.value("address").toString()});
+                                }
+                            }
+                            qDebug() << "Successfully parsed NameserverData for" << interfaceName;
                         }
+                    } else {
+                        qWarning() << "'Get' reply for NameserverData has no arguments for" << interfaceName;
                     }
                 } else {
-                    qWarning() << "Could not read NameserverData for" << interfaceName << "from" << ip4ConfigPath.path() << ":" << ip4ConfigIface->lastError().message();
+                    qWarning() << "Failed to call org.freedesktop.DBus.Properties.Get for NameserverData on" << interfaceName
+                               << ". Error:" << getDnsDataReply.errorMessage();
                 }
 
             } else {
