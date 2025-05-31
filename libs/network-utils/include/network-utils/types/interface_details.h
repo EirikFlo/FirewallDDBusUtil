@@ -23,6 +23,5 @@ struct InterfaceDetails {
     QList<StaticRoute> staticRoutes; // Configured static routes for this interface
 
     bool isUp = false;
-    quint64 speed = 0; // Speed in Mbps, or some standard unit (e.g., kbit/s as NM often uses)
     // Add other relevant details like duplex, state string from NM, etc.
 };
