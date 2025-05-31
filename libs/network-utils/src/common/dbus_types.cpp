@@ -126,17 +126,15 @@ void registerDbusTypes() {
     // Ensure QVariantMap and QList<QVariantMap> are registered for D-Bus,
     // as they are used in properties (e.g. AddressData aa{sv})
 
-    // Typedefs for clarity (can be placed at function scope or wider if needed)
-    typedef QMap<QString, QVariant> QVariantMapType;
-    typedef QList<QVariantMapType>  QVariantMapListType;
+    // Register QVariantMap (D-Bus type a{sv})
+    // String name for qRegisterMetaType should be unique and descriptive.
+    qRegisterMetaType<QVariantMap>("QVariantMap");
+    qDBusRegisterMetaType<QVariantMap>(); // Registers for D-Bus, uses Qt's internal signature for a{sv}
 
-    // Register QVariantMap (a{sv})
-    qRegisterMetaType<QVariantMapType>("QVariantMapType"); // For QVariant system
-    qDBusRegisterMetaType<QVariantMapType>();             // For D-Bus signature a{sv}
-
-    // Register QList<QVariantMap> (aa{sv})
-    qRegisterMetaType<QVariantMapListType>("QVariantMapListType"); // For QVariant system
-    qDBusRegisterMetaType<QVariantMapListType>();                  // For D-Bus signature aa{sv}
+    // Register QList<QVariantMap> (D-Bus type aa{sv})
+    // String name for qRegisterMetaType should be unique and descriptive.
+    qRegisterMetaType<QList<QVariantMap>>("QList<QVariantMap>");
+    qDBusRegisterMetaType<QList<QVariantMap>>(); // Registers for D-Bus, uses Qt's internal signature for aa{sv}
 
     // Attempt to explicitly register marshalling operators for QList<QVariantMap>
     // This might help with property system if it's not picking them up automatically.
