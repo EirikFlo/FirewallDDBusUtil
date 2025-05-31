@@ -351,8 +351,22 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
     }
 
     QVariant speedVar = deviceIface->property("Speed");
-    if (speedVar.isValid()) details.speed = speedVar.toULongLong(); // Speed in kbit/s by NM, convert to Mbps if needed by dividing by 1000
-    else qWarning() << "Could not read Speed for" << interfaceName << ":" << deviceIface->lastError().message();
+    if (speedVar.isValid() && speedVar.canConvert<quint32>()) {
+        details.speed = speedVar.toUInt();
+        if (details.speed == 0) {
+            // NM reports 0 for unknown speed (e.g. virtual devices, or if speed detection failed)
+            // This is not necessarily an error, but good to be aware of.
+            qDebug() << "Speed for" << interfaceName << "is reported as 0 kbit/s.";
+        }
+    } else {
+        if (!speedVar.isValid()) {
+            qWarning() << "Could not read Speed for" << interfaceName << "(property invalid):" << deviceIface->lastError().message();
+        } else {
+            // Property is valid, but maybe not the expected type or value is out of range for quint32 (unlikely for kbit/s speed)
+            qWarning() << "Speed property for" << interfaceName << "is valid, but not convertible to quint32. Value:" << speedVar;
+        }
+        details.speed = 0; // Default to 0 if unable to read or convert
+    }
 
     QVariant ip4ConfigPathVar = deviceIface->property("Ip4Config");
     if (!ip4ConfigPathVar.isValid() || !ip4ConfigPathVar.canConvert<QDBusObjectPath>()) {
