@@ -14,6 +14,7 @@
 
 #include <QMetaType>
 #include <QList> // Required for QList<T>
+#include <QVariantMap> // Required for QVariantMap
 
 // Forward declaration for QDBusArgument to allow operator declarations first
 class QDBusArgument;
@@ -81,6 +82,8 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, StaticRoute& val)
 // Metatype declarations for QList<T> are REMOVED to prevent auto-streaming attempts for lists.
 // Individual types (Port, Service, IpAddress, etc.) have Q_DECLARE_METATYPE in their own headers.
 
+Q_DECLARE_METATYPE(QVariantMap);
+Q_DECLARE_METATYPE(QList<QVariantMap>);
 
 namespace NetworkUtils {
     void registerDbusTypes();
