@@ -351,35 +351,6 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
         qWarning() << "Could not read State for" << interfaceName << ":" << deviceIface->lastError().message();
     }
 
-    qDebug() << "Attempting to read Speed property for" << interfaceName << "using QDBusInterface::property().";
-    QVariant speedVar = deviceIface->property("Speed"); // RESTORED
-    qDebug() << "  speedVar.isValid():" << speedVar.isValid();
-    if (speedVar.isValid()) {
-        qDebug() << "  speedVar.metaType().id():" << speedVar.metaType().id();
-        qDebug() << "  speedVar.metaType().name():" << speedVar.metaType().name();
-        qDebug() << "  speedVar.userType():" << speedVar.userType();
-        qDebug() << "  Expected QMetaType for quint32: id" << QMetaType::fromType<quint32>().id()
-                 << "name" << QMetaType::fromType<quint32>().name();
-        qDebug() << "  Is speedVar.metaType() == QMetaType::fromType<quint32>() ?" << (speedVar.metaType() == QMetaType::fromType<quint32>());
-
-        // Existing conversion logic (from before call("Get") was introduced)
-        if (speedVar.canConvert<quint32>()) { // Check canConvert based on the new diagnostics
-            details.speed = speedVar.toUInt();
-            if (details.speed == 0) {
-                qDebug() << "Speed for" << interfaceName << "is reported as 0.";
-            }
-        } else {
-             qWarning() << "Speed property for" << interfaceName << "is valid, but not convertible to quint32. Value:" << speedVar;
-             details.speed = 0;
-        }
-    } else {
-        qDebug() << "  speedVar is invalid (from property()).";
-        qDebug() << "    Error from specific interface (" << deviceIface->service() << deviceIface->path() << "):" << deviceIface->lastError().message();
-        qDebug() << "    Error from m_dbusConnection (" << m_dbusConnection.name() << "):" << m_dbusConnection.lastError().message();
-        qDebug() << "    Error from QDBusConnection::systemBus (" << QDBusConnection::systemBus().name() << "):" << QDBusConnection::systemBus().lastError().message();
-        details.speed = 0; // Default to 0 if unable to read
-    }
-
     QVariant ip4ConfigPathVar = deviceIface->property("Ip4Config");
     if (!ip4ConfigPathVar.isValid() || !ip4ConfigPathVar.canConvert<QDBusObjectPath>()) {
         qWarning() << "Could not read Ip4Config path for" << interfaceName << ":" << deviceIface->lastError().message();
