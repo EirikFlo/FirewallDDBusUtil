@@ -1,5 +1,6 @@
 #include "network-utils/networkmanager/QtNetworkManager.h" // Updated path
 #include <QDebug>
+#include <QMetaType>     // For QMetaType::fromType
 #include <QDBusObjectPath>
 #include <QDBusArgument> // Required for QVariant::value<QDBusArgument>() and streaming QList<QVariantMap>
 #include <QHostAddress>  // Required for IP address conversions
@@ -351,6 +352,18 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
     }
 
     QVariant speedVar = deviceIface->property("Speed");
+    qDebug() << "Attempting to read Speed property for" << interfaceName;
+    qDebug() << "  speedVar.isValid():" << speedVar.isValid();
+    if (speedVar.isValid()) {
+        qDebug() << "  speedVar.metaType().id():" << speedVar.metaType().id();
+        qDebug() << "  speedVar.metaType().name():" << speedVar.metaType().name();
+        qDebug() << "  speedVar.userType():" << speedVar.userType();
+        qDebug() << "  Expected QMetaType for quint32: id" << QMetaType::fromType<quint32>().id()
+                 << "name" << QMetaType::fromType<quint32>().name();
+        qDebug() << "  Is speedVar.metaType() == QMetaType::fromType<quint32>() ?" << (speedVar.metaType() == QMetaType::fromType<quint32>());
+    } else {
+        qDebug() << "  speedVar is invalid. D-Bus error:" << deviceIface->lastError().message();
+    }
     if (speedVar.isValid() && speedVar.canConvert<quint32>()) {
         details.speed = speedVar.toUInt();
         if (details.speed == 0) {
@@ -378,6 +391,15 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
             if (ip4ConfigIface && ip4ConfigIface->isValid()) {
                 QVariant addressesVar = ip4ConfigIface->property("AddressData");
                 if (addressesVar.isValid()) {
+                    qDebug() << "AddressData property (addressesVar) is valid for interface:" << interfaceName;
+                    qDebug() << "  addressesVar.metaType().id():" << addressesVar.metaType().id();
+                    qDebug() << "  addressesVar.metaType().name():" << addressesVar.metaType().name();
+                    qDebug() << "  addressesVar.userType():" << addressesVar.userType(); // Useful if it's a custom type
+                    qDebug() << "  Expected QMetaType for QList<QVariantMap>: id" << QMetaType::fromType<QList<QVariantMap>>().id()
+                             << "name" << QMetaType::fromType<QList<QVariantMap>>().name();
+                    qDebug() << "  Is addressesVar.metaType() == QMetaType::fromType<QList<QVariantMap>>() ?" << (addressesVar.metaType() == QMetaType::fromType<QList<QVariantMap>>());
+                    qDebug() << "  Can convert to QList<QVariantMap>?" << addressesVar.canConvert<QList<QVariantMap>>();
+
                     QDBusArgument arg = addressesVar.value<QDBusArgument>();
                     arg.beginArray(); // For aa{sv}
                     if (!arg.atEnd()) { // Typically take the first address configuration
