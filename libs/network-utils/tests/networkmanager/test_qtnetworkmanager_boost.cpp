@@ -1,4 +1,5 @@
-#define BOOST_TEST_MODULE QtNetworkManagerBoostTests
+#define BOOST_TEST_DYN_LINK
+#define BOOST_TEST_MAIN
 #include <boost/test/unit_test.hpp>
 
 #include "network-utils/networkmanager/QtNetworkManager.h"
