@@ -369,19 +369,18 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
             qDebug() << "  Successful 'Get' reply for Speed. speedPropertyValueVariant.metaType().name():" << speedPropertyValueVariant.metaType().name();
             qDebug() << "  speedDbusArg.currentSignature():" << speedDbusArg.currentSignature(); // Should be "u" for uint32
 
-            quint32 speedValue = 0;
-            speedDbusArg >> speedValue; // Use the streaming operator
-
-            if (speedDbusArg.error()) {
-                qWarning() << "Failed to stream Speed from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << speedDbusArg.currentSignature();
-                details.speed = 0; // Default to 0 on error
+            quint32 speedValue = 0; // Initialize to a default
+            speedDbusArg >> speedValue;
+            details.speed = speedValue;
+            // Rely on Qt D-Bus console messages for "Unregistered type" style errors.
+            // Add specific logging for what was actually read.
+            if (speedValue == 0 && speedDbusArg.currentSignature() == "u") { // Check signature to ensure it was likely a valid attempt
+                qDebug() << "Speed for" << interfaceName << "is reported as 0 kbit/s (after streaming from Get).";
+            } else if (speedDbusArg.currentSignature() == "u") { // Check signature
+                qDebug() << "Successfully parsed Speed for" << interfaceName << ":" << details.speed << "kbit/s. Signature:" << speedDbusArg.currentSignature();
             } else {
-                details.speed = speedValue; // Store the kbit/s value
-                if (details.speed == 0) {
-                    qDebug() << "Speed for" << interfaceName << "is reported as 0 kbit/s (after streaming from Get).";
-                } else {
-                    qDebug() << "Successfully parsed Speed for" << interfaceName << ":" << details.speed << "kbit/s";
-                }
+                qWarning() << "Attempted to stream Speed for" << interfaceName << "but signature was:" << speedDbusArg.currentSignature() << "(expected 'u'). Value set to 0.";
+                details.speed = 0;
             }
         } else {
             qWarning() << "'Get' reply for Speed has no arguments for" << interfaceName;
@@ -417,11 +416,11 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
                         qDebug() << "  dbusArg.currentSignature():" << dbusArg.currentSignature(); // Should be "aa{sv}"
 
                         QList<QVariantMap> addressDataList;
-                        dbusArg >> addressDataList; // Use the streaming operator
-
-                        if (dbusArg.error()) {
-                             qWarning() << "Failed to stream AddressData from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << dbusArg.currentSignature();
-                        } else if (!addressDataList.isEmpty()) {
+                        QString addressDataSignature = dbusArg.currentSignature(); // Get signature before streaming
+                        dbusArg >> addressDataList;
+                        // Rely on Qt D-Bus console messages for "Unregistered type" style errors.
+                        // Check if addressDataList was populated.
+                        if (!addressDataList.isEmpty()) {
                             QVariantMap firstAddressMap = addressDataList.first();
                             if (firstAddressMap.contains("address")) {
                                 details.currentIpAddress.address = firstAddressMap.value("address").toString();
@@ -429,9 +428,11 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
                             if (firstAddressMap.contains("prefix")) {
                                 details.currentPrefix.prefixLength = firstAddressMap.value("prefix").toUInt();
                             }
-                            qDebug() << "Successfully parsed AddressData for" << interfaceName;
+                            qDebug() << "Successfully parsed AddressData for" << interfaceName << ". Signature was:" << addressDataSignature;
+                        } else if (addressDataSignature == "aa{sv}") { // Check signature to ensure it was likely a valid attempt
+                            qDebug() << "AddressData list is empty for" << interfaceName << "(after streaming from Get). Signature was:" << addressDataSignature;
                         } else {
-                            qDebug() << "AddressData list is empty for" << interfaceName << "(after streaming from Get).";
+                            qWarning() << "Attempted to stream AddressData for" << interfaceName << "but signature was:" << addressDataSignature << "(expected 'aa{sv}'). List remains empty.";
                         }
                     } else {
                         qWarning() << "'Get' reply for AddressData has no arguments for" << interfaceName;
@@ -461,17 +462,21 @@ InterfaceDetails QtNetworkManager::getInterfaceDetails(const QString &interfaceN
                         qDebug() << "  dnsDbusArg.currentSignature():" << dnsDbusArg.currentSignature(); // Should be "aa{sv}"
 
                         QList<QVariantMap> dnsDataList;
-                        dnsDbusArg >> dnsDataList; // Use the streaming operator
-
-                        if (dnsDbusArg.error()) {
-                            qWarning() << "Failed to stream NameserverData from QDBusArgument for" << interfaceName << ". D-Bus signature was:" << dnsDbusArg.currentSignature();
-                        } else {
+                        QString dnsDataSignature = dnsDbusArg.currentSignature(); // Get signature before streaming
+                        dnsDbusArg >> dnsDataList;
+                        // Rely on Qt D-Bus console messages for "Unregistered type" style errors.
+                        // Check if dnsDataList was populated.
+                        if (!dnsDataList.isEmpty()) {
                             for (const QVariantMap &dnsMap : dnsDataList) {
                                 if (dnsMap.contains("address")) {
                                     details.currentDnsServers.append(IpAddress{dnsMap.value("address").toString()});
                                 }
                             }
-                            qDebug() << "Successfully parsed NameserverData for" << interfaceName;
+                            qDebug() << "Successfully parsed NameserverData for" << interfaceName << ". Signature was:" << dnsDataSignature;
+                        } else if (dnsDataSignature == "aa{sv}") { // Check signature
+                            qDebug() << "NameserverData list is empty for" << interfaceName << "(after streaming from Get). Signature was:" << dnsDataSignature;
+                        } else {
+                            qWarning() << "Attempted to stream NameserverData for" << interfaceName << "but signature was:" << dnsDataSignature << "(expected 'aa{sv}'). List remains empty.";
                         }
                     } else {
                         qWarning() << "'Get' reply for NameserverData has no arguments for" << interfaceName;
