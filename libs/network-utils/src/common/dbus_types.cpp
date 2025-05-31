@@ -12,6 +12,7 @@
 #include <QMetaType>
 #include <QDBusMetaType> // For qDBusRegisterMetaType
 #include <QList>
+#include <QDebug> // Added for debug output
 #include <QDBusArgument> // For implementing streaming operators
 
 // Q_DECLARE_METATYPE for individual types are in their respective headers (e.g. port.h)
@@ -95,6 +96,7 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, StaticRoute& val)
 
 namespace NetworkUtils {
 void registerDbusTypes() {
+    qDebug() << "NetworkUtils::registerDbusTypes() called - start";
     // Firewalld Types (operators are inline in dbus_types.h)
     // Their Q_DECLARE_METATYPE is in their respective headers.
     // QList<T> Q_DECLARE_METATYPE calls were removed from dbus_types.h.

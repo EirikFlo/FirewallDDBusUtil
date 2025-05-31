@@ -7,9 +7,10 @@
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
-    NetworkUtils::registerDbusTypes(); // Register custom types
+    qDebug() << "main() called - start";
+    NetworkUtils::registerDbusTypes(); // Register custom types VERY FIRST
 
+    QCoreApplication a(argc, argv);
     QtFirewalldManager man;
     const auto zones = man.zoneNames();
     qDebug() << zones;
